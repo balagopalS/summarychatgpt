@@ -6,16 +6,15 @@ const pdf = require("pdf-parse");
 const fileUploader = require("express-fileupload");
 const { Configuration, OpenAIApi } = require("openai");
 const dotenv = require("dotenv");
-
-dotenv.config();
+const path = require("path");
+require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
 
 const app = express();
 const PORT = 8800;
 
 const configuration = new Configuration({
-  apiKey: process.env.OPENAI_KEY,
+  apiKey: "sk - mGlcbqoKzbwFvaZJC6gfT3BlbkFJ5Ndaxodr3WlSrW2sJXJi",
 });
-
 const openai = new OpenAIApi(configuration);
 
 app.use(cors());
@@ -25,45 +24,52 @@ app.use(bodyparser.json());
 app.use(bodyparser.urlencoded({ extended: true }));
 
 app.post("/summary", async function (req, res) {
-  let sampleFile;
-  let uploadPath;
-
   if (!req.files || Object.keys(req.files).length === 0) {
+    console.log("No file uploaded");
     return res.status(400).send("No file uploaded");
   }
-  sampleFile = req.files.uploadedFile;
 
-  uploadPath =
+  const sampleFile = req.files.uploadedFile;
+  const uploadPath =
     __dirname + "/tmp" + new Date().getTime() + "/" + sampleFile.name;
-  sampleFile.mv(uploadPath, async function (err) {
-    if (err) return res.status(500).send(err);
-    let dataBuffer = fs.readFileSync(uploadPath);
-    pdf(dataBuffer).then(async function (data) {
-      openai
-        .createCompletion({
-          model: "text-davinci-003",
-          prompt: data.text + `\n\nTl;dr`,
-          temperature: 0.7,
-          max_tokens: Math.floor(data.text?.length / 2),
-          top_p: 1,
-          frequency_penalty: 0,
-          presence_penalty: 0.5,
-        })
-        .then((response) => {
-          fs.unlinkSync(uploadPath);
-          res.json({
-            id: new Date().getTime(),
-            text: response.data.choices[0].text,
-          });
-        })
-        .catch((err) => {
-          console.log("Error:", err);
-          res.status(500).send("an error occured");
-        });
+
+  // Create the /tmp directory if it doesn't exist
+  if (!fs.existsSync(__dirname + "/tmp")) {
+    fs.mkdirSync(__dirname + "/tmp");
+  }
+
+  try {
+    await sampleFile.mv(uploadPath);
+    console.log("File uploaded successfully");
+
+    const dataBuffer = fs.readFileSync(uploadPath);
+    const data = await pdf(dataBuffer);
+
+    const response = await openai.createCompletion({
+      model: "text-davinci-003",
+      prompt: data.text + `\n\nTl;dr`,
+      temperature: 0.7,
+      max_tokens: Math.floor(data.text?.length / 2),
+      top_p: 1,
+      frequency_penalty: 0,
+      presence_penalty: 0.5,
     });
-  });
+
+    fs.unlinkSync(uploadPath);
+    if (response.data?.choices && response.data.choices.length > 0) {
+      const summaryText = response.data.choices[0].text;
+      console.log("Summary generated successfully");
+      res.json({ id: new Date().getTime(), text: summaryText });
+    } else {
+      console.log("Unable to get summary from OpenAI API");
+      res.status(500).send("Unable to get summary from OpenAI API");
+    }
+  } catch (err) {
+    console.log("Error:", err);
+    res.status(500).send("An error occurred while processing the file");
+  }
 });
 
 app.listen(PORT, () => {
-  console.log("Listening on port " + PORT);
+  console.log("Server listening on port " + PORT);
 });

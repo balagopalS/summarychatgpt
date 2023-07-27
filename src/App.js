@@ -1,12 +1,14 @@
-import { useEffect, useState } from "react";
-import Youtube from "./assets/youtube.png";
+import React, { useEffect, useState } from "react";
 import Delete from "./assets/delete.png";
+import axios from "axios";
 
 function App() {
-  const [value, setValue] = useState(null);
-  const [data, setData] = useState([null]);
+  const [value, setValue] = useState("");
+  const [data, setData] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [isCopy, setIsCopy] = useState(false);
+  const apiURL = "http://localhost:8800";
+  const [selected, setSelected] = useState(null);
 
   const handlesubmit = (e) => {
     e.preventDefault();
@@ -16,7 +18,8 @@ function App() {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: "Bearer " + String(process.env.REACT_APP_OPENAI_KEY),
+        Authorization:
+          "Bearer " + "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",
       },
       body: JSON.stringify({
         prompt: value + `\n\nTl;dr`,
@@ -38,23 +41,50 @@ function App() {
         const text = dt.choices[0].text;
         setSubmitting(false);
 
+        console.log("Summary generated:", text);
         localStorage.setItem(
           "summary",
-          JSON.stringify(data?.length > 0 ? [...data, text] : [text])
+          JSON.stringify(
+            data?.length > 0
+              ? [...data, { id: new Date().getTime(), text: text }]
+              : [text]
+          )
         );
-
         fetchLocalStorage();
       })
       .catch((error) => {
         setSubmitting(false);
-        console.log(error);
+        console.log("Error generating summary:", error);
       });
   };
 
-  const fetchLocalStorage = async () => {
-    const result = await localStorage.getItem("summary");
+  const handlesubmitPDF = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+    const file = e.target.files[0];
+    var formData = new FormData();
+    formData.append("filename", "User File");
+    formData.append("uploadedFile", file);
 
-    setData(JSON.parse(result)?.reverse());
+    try {
+      const { data: res } = await axios.post(apiURL + "/summary", formData);
+      console.log("Summary response:", res);
+      localStorage.setItem("summary", JSON.stringify([...data, res]));
+      fetchLocalStorage();
+    } catch (error) {
+      console.log("Error uploading PDF:", error);
+    }
+  };
+
+  const fetchLocalStorage = async () => {
+    try {
+      const result = await localStorage.getItem("summary");
+      const parsedData = JSON.parse(result);
+      console.log("Fetched data from localStorage:", parsedData);
+      setData(parsedData?.reverse() || []);
+    } catch (error) {
+      console.log("Error fetching from localStorage:", error);
+    }
   };
 
   async function copyTextToClipboard(text) {
@@ -64,121 +94,126 @@ function App() {
   }
 
   const handleCopy = (txt) => {
-    copyTextToClipboard(txt)
+    copyTextToClipboard(txt.text)
       .then(() => {
+        setSelected(txt.id);
         setIsCopy(true);
 
         setTimeout(() => {
           setIsCopy(false);
+          setSelected(null);
         }, 1500);
       })
-      .catch((err) => console.log(err));
+      .catch((err) => console.log("Error copying text:", err));
   };
 
   const handleDelete = (txt) => {
-    const filtered = data?.filter((d) => d !== txt);
+    const filtered = data?.filter((d) => d.id !== txt.id);
 
     setData(filtered);
 
     localStorage.setItem("summary", JSON.stringify(filtered));
   };
+
   useEffect(() => {
     fetchLocalStorage();
   }, []);
 
   return (
     <div
-      className='w-full bg-[#0f172a] h-full min-h-[100vh]
+      className="w-full bg-[#0f172a] h-full min-h-[100vh]
       py-4
       px-4
-      md:px-20'
+      md:px-20"
     >
-      <div className='w-full'>
+      <div className="w-full">
         <div
-          className='flex flex-row justify-between items-center
-        w-full h-10 px-5 2xl:px-40'
+          className="flex flex-row justify-between items-center
+        w-full h-10 px-5 2xl:px-40"
         >
-          <h3 className='cursor-pointer text-3xl font-bold text-cyan-600'>
-            Summary!
-          </h3>
-          <a
-            href='https://youtube.com/@CodeWaveWithAsante'
-            target='_blank'
-            rel='noreferrer'
-          >
-            <img
-              src={Youtube}
-              className='w-10 h-10 rounded-lg cursor-pointer'
-            />
-          </a>
+          <h3 className="cursor-pointer text-3xl font-bold text-cyan-600"></h3>
         </div>
 
         <div
-          className='flex flex-col items-center justify-center
-        mt-4 p-4'
+          className="flex flex-col items-center justify-center
+        mt-4 p-4"
         >
-          <h1 className='text-3xl text-white text-center leading-10 font-semibold'>
-            Summarizer with
+          <h1 className="text-3xl text-white text-center leading-10 font-semibold">
+            PRD
             <br />
-            <span className='text-5xl font-bold text-cyan-500'>OpenAI GPT</span>
+            <span className="text-5xl font-bold text-cyan-500">Summarizer</span>
           </h1>
-          <p className='mt-5 text-lg text-gray-500 sm:text-xl text-center max-w-2xl'>
-            Simply upload your document and get a quick summary using OpenAI GPT
-            Summerizer
+          <p className="mt-5 text-lg text-gray-500 sm:text-xl text-center max-w-2xl">
+            Upload your document and get a quick summary
           </p>
         </div>
 
-        <div className='flex flex-col w-full items-center justify-center mt-5'>
+        <div className="flex flex-col w-full items-center justify-center mt-5">
           <textarea
-            placeholder='Paste doc content here ...'
+            placeholder="Paste doc content here ..."
             rows={6}
-            className='block w-full md:w-[650px] rounded-md border border-slate-700
+            className="block w-full md:w-[650px] rounded-md border border-slate-700
             bg-slate-800 p-2 text-sm shadow-lg font-medium text-white focus:border-gray-500
-             focus:outline-none focus:ring-0'
+             focus:outline-none focus:ring-0"
             onChange={(e) => setValue(e.target.value)}
           ></textarea>
 
-          {value?.length > 0 &&
-            (submitting ? (
-              <p className='text-md text-cyan-500 mt-5'>Please wait ....</p>
-            ) : (
-              <button
-                className='mt-5 bg-blue-500 px-5 py-2 text-white text-md font-
+          {value?.length > 0 && !submitting && (
+            <button
+              className="mt-5 bg-blue-500 px-5 py-2 text-white text-md font-
             cursor-pointer rounded-md
-          '
-                onClick={handlesubmit}
-              >
-                Submit
-              </button>
-            ))}
+          "
+              onClick={handlesubmit}
+            >
+              Submit
+            </button>
+          )}
+          {!value?.length > 0 && (
+            <div className="mt-5">
+              <label htmlFor="userFile" className="text-white mr-2">
+                Choose File
+              </label>
+              <input
+                type="file"
+                id="userFile"
+                name="userFile"
+                accept="pdf"
+                className="text-slate-300"
+                onChange={(e) => handlesubmitPDF(e)}
+              />
+            </div>
+          )}
+          {submitting && (
+            <p className="text-md text-cyan-500 mt-5">Please wait ....</p>
+          )}
         </div>
       </div>
 
       <div
-        className='w-full mt-10 flex flex-col gap-5 shadow-md
-      items-center justify-center'
+        className="w-full mt-10 flex flex-col gap-5 shadow-md
+      items-center justify-center"
       >
         {data?.length > 0 && (
           <>
-            <p className='text-white font-semibold text-lg'>Summary History</p>
+            <p className="text-white font-semibold text-lg">Summary History</p>
             {data?.map((d, index) => (
               <div
                 key={index}
-                className='max-w-2xl bg-slate-800 p-3 rounded-md'
+                className="max-w-2xl bg-slate-800 p-3 rounded-md"
               >
-                <p className='text-gray-400 text-lg'>{d}</p>
-                <div className='flex gap-5 items-center justify-end mt-2'>
+                <p className="text-gray-400 text-lg">{d.text}</p>
+                <div className="flex gap-5 items-center justify-end mt-2">
                   <p
-                    className='text-gray-500 font-semibold cursor-pointer'
+                    className="text-gray-500 font-semibold cursor-pointer"
                     onClick={() => handleCopy(d)}
                   >
-                    {isCopy ? "Copied" : "Copy"}
+                    {isCopy && selected === d.id ? "Copied" : "Copy"}
                   </p>
                   <span
-                    className='cursor-pointer'
+                    className="cursor-pointer"
                     onClick={() => handleDelete(d)}
                   >
-                    <img src={Delete} className='w-6 h-6' />
+                    <img src={Delete} className="w-6 h-6" />
                   </span>
                 </div>
               </div>
